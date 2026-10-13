@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Systematic Firestore Database Manager — CSA Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .mono-text { font-family: 'JetBrains Mono', monospace; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0b0f19; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 h-screen flex flex-col overflow-hidden antialiased">
+
+  <!-- Main Top Header -->
+  <header class="border-b border-slate-800 bg-slate-950 px-4 py-3 sm:px-6 sm:py-3.5 flex items-center justify-between gap-3 sticky top-0 z-30 shrink-0">
+    <div class="flex items-center gap-3">
+      <!-- Mobile Sidebar Toggle -->
+      <button onclick="toggleSidebar()" aria-label="Toggle Navigation Drawer" class="md:hidden p-2 -ml-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+      </button>
+      <div class="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" id="connection-indicator"></div>
+      <div class="truncate">
+        <h1 class="text-sm sm:text-base font-bold tracking-tight text-white truncate">Mandsaur University CSA Portal</h1>
+        <p class="text-[10px] sm:text-xs text-slate-400 truncate">Systematic Data Master Console • Read &amp; Write Access</p>
+      </div>
+    </div>
+    <div class="hidden sm:flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg text-xs shrink-0">
+      <span class="text-slate-400">Cluster:</span>
+      <span class="mono-text text-amber-400 font-medium">singing-competition-41788</span>
+    </div>
+  </header>
+
+  <!-- Mobile Sidebar Backdrop -->
+  <div id="sidebar-backdrop" onclick="toggleSidebar(false)" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 hidden md:hidden transition-opacity"></div>
+
+  <!-- Workspace Container -->
+  <div class="flex flex-1 overflow-hidden relative">
+    
+    <!-- Sidebar / Mobile Drawer -->
+    <aside id="sidebar" class="fixed md:static inset-y-0 left-0 z-50 w-72 sm:w-80 bg-slate-950 border-r border-slate-800 p-4 flex flex-col gap-2 overflow-y-auto transform -translate-x-full md:translate-x-0 transition-transform duration-200 ease-in-out shrink-0">
+      <div class="flex items-center justify-between mb-1">
+        <div class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider px-2">Database Collections</div>
+        <button onclick="toggleSidebar(false)" class="md:hidden text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+      <nav class="flex flex-col gap-1 flex-1" id="collections-menu"></nav>
+      <div class="border-t border-slate-800/80 pt-3 mt-2">
+        <div class="bg-slate-900/60 p-3 rounded-lg border border-slate-800 text-xs text-slate-400 space-y-1">
+          <p class="font-semibold text-slate-300">💡 Systematic Tip:</p>
+          <p class="text-[11px] leading-relaxed">Click any row to reveal complete un-truncated nested structures and JSON matrices.</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 flex flex-col bg-slate-900 min-w-0 overflow-hidden">
+      <!-- Collection Action Bar -->
+      <div class="bg-slate-950/80 backdrop-blur border-b border-slate-800 px-4 py-3 sm:px-6 sm:py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+        <div class="min-w-0">
+          <h2 class="text-base sm:text-xl font-bold text-white flex items-center gap-2 truncate" id="current-collection-title">Select a Collection</h2>
+          <p class="text-[11px] sm:text-xs text-slate-400 truncate mt-0.5" id="current-collection-desc">Choose a dataset from the sidebar to systematically manipulate contents.</p>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <div class="relative flex-1 sm:w-56">
+            <input type="text" id="search-input" oninput="filterDocuments()" placeholder="Search records..." class="w-full bg-slate-900 border border-slate-800 text-xs text-slate-200 placeholder-slate-500 px-3 py-2 rounded-lg focus:outline-none focus:border-blue-500 transition-colors">
+          </div>
+          <button onclick="openCreateModal()" id="btn-add-document" class="hidden items-center gap-1.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-medium text-xs sm:text-sm px-3.5 py-2 rounded-lg shadow-lg shadow-blue-900/20 transition-all whitespace-nowrap">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+            <span>Add Document</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Realtime Viewport -->
+      <div class="flex-1 overflow-auto p-3 sm:p-6" id="data-container-root">
+        <div class="h-full flex flex-col items-center justify-center text-slate-500 space-y-2 py-20">
+          <svg class="w-12 h-12 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 7v10c0 2.21 3.58 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.58 4 8 4s8-1.79 8-4M4 7c0-2.21 3.58-4 8-4s8 1.79 8 4m0 5c0 2.21-3.58 4-8 4s-8-1.79-8-4"></path></svg>
+          <p class="text-sm font-medium">No Collection Selected</p>
+          <p class="text-xs max-w-xs text-center text-slate-600">Please choose a category structure from the sidebar menu to populate full-text tables.</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Document Editor / Creator Modal -->
+  <div id="editor-modal" onclick="onBackdropClick(event)" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden flex items-center justify-center p-3 sm:p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[92vh] overflow-hidden" onclick="event.stopPropagation()">
+      <div class="px-5 py-4 border-b border-slate-800 bg-slate-950 flex items-center justify-between shrink-0">
+        <div class="truncate mr-2">
+          <h3 id="modal-headline" class="text-base sm:text-lg font-bold text-white truncate">Document Editor</h3>
+          <p id="modal-subheadline" class="text-[11px] sm:text-xs text-slate-400 truncate">Manage object structural attributes cleanly.</p>
+        </div>
+        <button onclick="closeEditorModal()" class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-all shrink-0">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4" id="modal-form-fields"></div>
+
+      <!-- Add New Field Control -->
+      <div class="px-5 py-3 bg-slate-950/60 border-t border-slate-800/80 flex items-center justify-between text-xs">
+        <span class="text-slate-400 text-[11px]">Need to append another attribute?</span>
+        <button type="button" onclick="promptAddCustomField()" class="text-blue-400 hover:text-blue-300 font-medium flex items-center gap-1.5 bg-blue-950/40 border border-blue-800/40 px-2.5 py-1 rounded-md transition-colors">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+          Add Field
+        </button>
+      </div>
+
+      <div class="px-5 py-3.5 border-t border-slate-800 bg-slate-950 flex flex-wrap items-center justify-between gap-3 shrink-0">
+        <p class="text-[11px] text-slate-500 hidden sm:block">Arrays are parsed via line-breaks.</p>
+        <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <button onclick="closeEditorModal()" class="flex-1 sm:flex-none px-4 py-2 border border-slate-700 text-slate-300 hover:bg-slate-800 rounded-lg text-xs sm:text-sm font-medium transition-all">Cancel</button>
+          <button id="modal-btn-submit" class="flex-1 sm:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-lg text-xs sm:text-sm font-medium shadow-lg shadow-emerald-950/50 transition-all">Save Changes</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4 sm:px-0"></div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAJfnkX0Dd2IYTiMa6MBxX-hXFegonlkC0",
+      authDomain: "singing-competition-41788.firebaseapp.com",
+      projectId: "singing-competition-41788",
+      storageBucket: "singing-competition-41788.firebasestorage.app",
+      messagingSenderId: "722997098726",
+      appId: "1:722997098726:web:243a59e57bb4e3d1836327",
+      measurementId: "G-XRCZ0836FG"
+    };
+
+    if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
+    const db = firebase.firestore();
+
+    const TARGET_COLLECTIONS = [
+      { id: 'events', label: 'Events Registry', desc: 'Main timeline and criteria baseline settings for competitive stages.', icon: '🏆' },
+      { id: 'registrations', label: 'Registrations Log', desc: 'Student intake application data pipeline entries.', icon: '📝' },
+      { id: 'contestants', label: 'Contestants Pool', desc: 'Active approved vocalists/teams selected for evaluation.', icon: '🎤' },
+      { id: 'judges', label: 'Judges Bench', desc: 'Registered credentials mapping for panel examiners.', icon: '⚖️' },
+      { id: 'judgeScores', label: 'Judge Scores Matric', desc: 'Raw score itemization logs tied to criteria profiles.', icon: '📊' },
+      { id: 'audienceVotes', label: 'Audience Votes Stream', desc: 'Realtime telemetry incoming streams for public interaction.', icon: '🗳️' },
+      { id: 'results', label: 'Calculated Results', desc: 'Final computed standings combining weighted scores.', icon: '🥇' },
+      { id: 'users', label: 'User Master Directory', desc: 'System structural accounts configurations.', icon: '👥' },
+      { id: 'competitionsHistory', label: 'Historical Archives', desc: 'Archived records of historical competition rounds.', icon: '📚' }
+    ];
+
+    let currentCollectionId = "";
+    let loadedDocumentsCache = {};
+    let activeEditingId = null;
+    let currentCollectionUnsubscribe = null;
+    let rawSnapshotDocs = [];
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function toggleSidebar(forceState) {
+      const sidebar = document.getElementById('sidebar');
+      const backdrop = document.getElementById('sidebar-backdrop');
+      const isOpen = !sidebar.classList.contains('-translate-x-full');
+      const targetState = typeof forceState === 'boolean' ? forceState : !isOpen;
+
+      if (targetState) {
+        sidebar.classList.remove('-translate-x-full');
+        backdrop.classList.remove('hidden');
+      } else {
+        sidebar.classList.add('-translate-x-full');
+        backdrop.classList.add('hidden');
+      }
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      const colorStyles = {
+        success: 'bg-emerald-950/90 border-emerald-700 text-emerald-200',
+        error: 'bg-rose-950/90 border-rose-700 text-rose-200',
+        info: 'bg-slate-950/90 border-slate-700 text-slate-200'
+      };
+
+      toast.className = `p-3.5 rounded-lg border shadow-xl text-xs flex items-center justify-between gap-3 pointer-events-auto transition-all duration-300 transform translate-y-2 opacity-0 ${colorStyles[type] || colorStyles.info}`;
+      toast.innerHTML = `
+        <span class="leading-relaxed">${escapeHtml(message)}</span>
+        <button onclick="this.parentElement.remove()" class="text-slate-400 hover:text-white p-1">&times;</button>
+      `;
+
+      container.appendChild(toast);
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      });
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 4000);
+    }
+
+    function onBackdropClick(e) {
+      if (e.target.id === 'editor-modal') closeEditorModal();
+    }
+
+    function initSidebar() {
+      const menu = document.getElementById('collections-menu');
+      menu.innerHTML = "";
+      TARGET_COLLECTIONS.forEach(col => {
+        const btn = document.createElement('button');
+        btn.id = `side-btn-${col.id}`;
+        btn.className = `w-full text-left px-3 py-2.5 rounded-lg flex items-center justify-between text-xs sm:text-sm transition-all border border-transparent hover:bg-slate-900 group`;
+        btn.onclick = () => {
+          selectCollection(col.id);
+          if (window.innerWidth < 768) toggleSidebar(false);
+        };
+        btn.innerHTML = `
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="text-base shrink-0">${col.icon}</span>
+            <div class="truncate">
+              <p class="font-medium text-slate-300 group-hover:text-white truncate">${escapeHtml(col.label)}</p>
+              <p class="text-[11px] text-slate-500 truncate mono-text">${escapeHtml(col.id)}</p>
+            </div>
+          </div>
+          <span class="text-[11px] font-mono bg-slate-900 border border-slate-800 text-slate-400 group-hover:border-slate-700 px-1.5 py-0.5 rounded shadow-sm shrink-0" id="badge-count-${col.id}">...</span>
+        `;
+        menu.appendChild(btn);
+        attachCountListener(col.id);
+      });
+    }
+
+    function attachCountListener(colId) {
+      db.collection(colId).onSnapshot(snap => {
+        const badge = document.getElementById(`badge-count-${colId}`);
+        if (badge) badge.innerText = snap.size;
+      }, () => {
+        const badge = document.getElementById(`badge-count-${colId}`);
+        if (badge) badge.innerText = "Err";
+      });
+    }
+
+    function selectCollection(colId) {
+      if (currentCollectionId === colId) return;
+      currentCollectionId = colId;
+      const colMeta = TARGET_COLLECTIONS.find(c => c.id === colId);
+
+      TARGET_COLLECTIONS.forEach(c => {
+        const el = document.getElementById(`side-btn-${c.id}`);
+        if (el) {
+          el.classList.remove('bg-slate-800', 'border-slate-700', 'text-white');
+          if (c.id === colId) {
+            el.classList.add('bg-slate-800', 'border-slate-700', 'text-white');
+          }
+        }
+      });
+
+      document.getElementById('current-collection-title').innerHTML = `${colMeta.icon} ${escapeHtml(colMeta.label)}`;
+      document.getElementById('current-collection-desc').innerText = colMeta.desc;
+      document.getElementById('search-input').value = "";
+
+      const addBtn = document.getElementById('btn-add-document');
+      addBtn.classList.remove('hidden');
+      addBtn.classList.add('flex');
+
+      renderDataGrid(colId);
+    }
+
+    function renderDataGrid(colId) {
+      const container = document.getElementById('data-container-root');
+      container.innerHTML = `
+        <div class="flex items-center justify-center p-16 text-slate-400 gap-2.5 text-xs sm:text-sm">
+          <svg class="animate-spin h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+          Synchronizing collection records in real-time...
+        </div>`;
+
+      // Unsubscribe from previous collection to prevent listener leaks
+      if (currentCollectionUnsubscribe) {
+        currentCollectionUnsubscribe();
+      }
+
+      currentCollectionUnsubscribe = db.collection(colId).onSnapshot(snapshot => {
+        if (currentCollectionId !== colId) return;
+
+        loadedDocumentsCache = {};
+        rawSnapshotDocs = [];
+
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          loadedDocumentsCache[doc.id] = data;
+          rawSnapshotDocs.push({ id: doc.id, data });
+        });
+
+        renderFilteredTable(rawSnapshotDocs);
+      }, err => {
+        container.innerHTML = `
+          <div class="bg-rose-950/20 border border-rose-800/50 p-6 rounded-xl text-rose-300 text-sm max-w-xl mx-auto my-10">
+            <h4 class="font-bold text-rose-400 mb-1">Database Rule Authorization Denied</h4>
+            <p class="text-xs text-rose-300/80 leading-relaxed">${escapeHtml(err.message)}</p>
+          </div>`;
+      });
+    }
+
+    function filterDocuments() {
+      const query = document.getElementById('search-input').value.toLowerCase().trim();
+      if (!query) {
+        renderFilteredTable(rawSnapshotDocs);
+        return;
+      }
+
+      const filtered = rawSnapshotDocs.filter(item => {
+        if (item.id.toLowerCase().includes(query)) return true;
+        return JSON.stringify(item.data).toLowerCase().includes(query);
+      });
+
+      renderFilteredTable(filtered, true);
+    }
+
+    function renderFilteredTable(docList, isFiltered = false) {
+      const container = document.getElementById('data-container-root');
+
+      if (docList.length === 0) {
+        if (isFiltered) {
+          container.innerHTML = `
+            <div class="border-2 border-dashed border-slate-800 rounded-xl p-10 text-center text-slate-500">
+              <p class="text-sm font-semibold text-slate-400">No Matching Documents</p>
+              <p class="text-xs text-slate-600 mt-1">Try refining your search keyword.</p>
+            </div>`;
+          return;
+        }
+
+        container.innerHTML = `
+          <div class="border-2 border-dashed border-slate-800 rounded-xl p-10 text-center text-slate-500">
+            <p class="text-sm font-semibold text-slate-400">Collection is Empty</p>
+            <p class="text-xs text-slate-600 mt-1 mb-4">No records exist inside path "${escapeHtml(currentCollectionId)}".</p>
+            <button onclick="openCreateModal()" class="mx-auto flex items-center gap-2 bg-slate-800 text-slate-300 border border-slate-700 text-xs px-3.5 py-2 rounded-lg hover:text-white hover:bg-slate-700 transition-all">
+              Create First Document
+            </button>
+          </div>`;
+        return;
+      }
+
+      let structuralKeys = new Set();
+      docList.forEach(item => {
+        Object.keys(item.data).forEach(k => structuralKeys.add(k));
+      });
+
+      const visibleKeys = Array.from(structuralKeys).slice(0, 4);
+
+      let tableHtml = `
+        <div class="overflow-x-auto border border-slate-800 rounded-xl bg-slate-950 shadow-inner">
+          <table class="w-full text-left border-collapse table-auto text-xs sm:text-sm">
+            <thead>
+              <tr class="border-b border-slate-800 bg-slate-900/50 text-slate-400 text-[11px] font-semibold uppercase tracking-wider">
+                <th class="px-3 sm:px-4 py-3 min-w-[140px]">Document Key</th>
+                ${visibleKeys.map(k => `<th class="px-3 sm:px-4 py-3 min-w-[150px]">${escapeHtml(k)}</th>`).join('')}
+                <th class="px-3 sm:px-4 py-3 text-right min-w-[120px]">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800">
+      `;
+
+      docList.forEach(item => {
+        const docId = item.id;
+        const data = item.data;
+
+        tableHtml += `
+          <tr class="hover:bg-slate-900/60 cursor-pointer transition-colors group" onclick="toggleDetailsRow('${escapeHtml(docId)}')">
+            <td class="px-3 sm:px-4 py-3 font-medium text-slate-300 mono-text text-xs whitespace-nowrap">
+              <div class="flex items-center gap-1.5">
+                <span id="chevron-${escapeHtml(docId)}" class="text-slate-600 group-hover:text-blue-400 transition-transform duration-150 inline-block">▶</span>
+                <span class="truncate max-w-[120px] sm:max-w-xs">${escapeHtml(docId)}</span>
+              </div>
+            </td>
+            ${visibleKeys.map(key => {
+              let displayVal = data[key];
+              if (displayVal === undefined || displayVal === null) {
+                displayVal = '<span class="text-slate-700 italic">null</span>';
+              } else if (Array.isArray(displayVal)) {
+                displayVal = `<span class="bg-slate-900 border border-slate-800 text-blue-400 px-1.5 py-0.5 rounded text-[11px]">Array (${displayVal.length})</span>`;
+              } else if (typeof displayVal === 'boolean') {
+                displayVal = displayVal ? '<span class="text-emerald-400 font-medium">True</span>' : '<span class="text-rose-400 font-medium">False</span>';
+              } else if (typeof displayVal === 'object') {
+                displayVal = '<span class="bg-slate-900 border border-slate-800 text-purple-400 px-1.5 py-0.5 rounded text-[11px]">Object</span>';
+              } else {
+                let sanitized = escapeHtml(String(displayVal));
+                if (sanitized.length > 50) sanitized = sanitized.substring(0, 47) + '...';
+                displayVal = sanitized;
+              }
+              return `<td class="px-3 sm:px-4 py-3 text-slate-300 text-xs leading-relaxed max-w-xs break-words">${displayVal}</td>`;
+            }).join('')}
+            <td class="px-3 sm:px-4 py-3 text-right text-xs" onclick="event.stopPropagation();">
+              <div class="flex items-center justify-end gap-1.5">
+                <button onclick="openEditModal('${escapeHtml(docId)}')" class="bg-slate-900 border border-slate-800 text-amber-400 hover:border-amber-500/50 hover:bg-amber-950/20 px-2 py-1 rounded transition-all">Edit</button>
+                <button onclick="deleteDocument('${escapeHtml(docId)}')" class="bg-slate-900 border border-slate-800 text-rose-400 hover:border-rose-500/50 hover:bg-rose-950/20 px-2 py-1 rounded transition-all">Delete</button>
+              </div>
+            </td>
+          </tr>
+          <tr id="details-row-${escapeHtml(docId)}" class="hidden bg-slate-950/90 border-l-2 border-blue-500">
+            <td colspan="${visibleKeys.length + 2}" class="p-4 sm:p-6">
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 text-xs">
+                <div>
+                  <h4 class="text-xs sm:text-sm font-bold text-white mb-2.5 flex items-center gap-1.5">
+                    <span class="h-1.5 w-1.5 rounded-full bg-blue-400"></span> 
+                    Full Attributes Explorer
+                  </h4>
+                  <div class="space-y-2.5 bg-slate-900/60 p-3 sm:p-4 rounded-xl border border-slate-800/80 max-h-80 overflow-y-auto">
+                    ${Object.keys(data).map(k => {
+                      let innerVal = data[k];
+                      if (Array.isArray(innerVal)) {
+                        return `
+                          <div class="border-b border-slate-800/60 pb-2 mb-2 last:border-0 last:pb-0">
+                            <span class="text-blue-400 font-semibold uppercase tracking-wider block text-[10px]">${escapeHtml(k)} (List)</span>
+                            <ul class="list-disc pl-4 mt-1 space-y-0.5 text-slate-300 text-xs leading-relaxed">
+                              ${innerVal.map(li => `<li>${escapeHtml(String(li))}</li>`).join('')}
+                            </ul>
+                          </div>`;
+                      }
+                      return `
+                        <div class="border-b border-slate-800/60 pb-2 mb-2 last:border-0 last:pb-0">
+                          <span class="text-amber-500 font-semibold uppercase tracking-wider block text-[10px]">${escapeHtml(k)}</span>
+                          <p class="text-slate-200 mt-0.5 text-xs whitespace-pre-wrap leading-relaxed select-all">${escapeHtml(String(innerVal))}</p>
+                        </div>`;
+                    }).join('')}
+                  </div>
+                </div>
+                <div>
+                  <h4 class="text-xs sm:text-sm font-bold text-white mb-2.5 flex items-center gap-1.5">
+                    <span class="h-1.5 w-1.5 rounded-full bg-purple-400"></span>
+                    Raw Structural JSON Payload
+                  </h4>
+                  <pre class="bg-slate-900 border border-slate-800 text-slate-300 p-3 sm:p-4 rounded-xl max-h-80 overflow-auto mono-text text-[11px] leading-relaxed select-all">${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+                </div>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+
+      tableHtml += `</tbody></table></div>`;
+      container.innerHTML = tableHtml;
+    }
+
+    function toggleDetailsRow(docId) {
+      const el = document.getElementById(`details-row-${docId}`);
+      const chevron = document.getElementById(`chevron-${docId}`);
+      if (el) {
+        const isHidden = el.classList.toggle('hidden');
+        if (chevron) {
+          chevron.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(90deg)';
+        }
+      }
+    }
+
+    function openCreateModal() {
+      activeEditingId = null;
+      document.getElementById('modal-headline').innerText = `Add Document`;
+      document.getElementById('modal-subheadline').innerText = `New record into path [${currentCollectionId}]`;
+
+      const formFields = document.getElementById('modal-form-fields');
+      formFields.innerHTML = `
+        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+          <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider">Custom Document ID (Reference Key)</label>
+          <input type="text" id="modal-field-__docId" placeholder="e.g. event-poster-2026 (Leave empty for auto-ID)" class="w-full bg-slate-900 border border-slate-800 px-3 py-2 rounded-lg text-xs sm:text-sm text-white focus:outline-none focus:border-blue-500 mono-text">
+        </div>
+      `;
+
+      let sampleData = { title: "", description: "" };
+      if (rawSnapshotDocs.length > 0) {
+        sampleData = Object.assign({}, rawSnapshotDocs[0].data);
+      } else {
+        if (currentCollectionId === 'events') sampleData = { title: "", description: "", rules: ["Rule 1"], status: "OPEN" };
+        if (currentCollectionId === 'users') sampleData = { name: "", email: "", role: "student" };
+      }
+
+      delete sampleData.id;
+
+      Object.keys(sampleData).forEach(key => {
+        formFields.insertAdjacentHTML('beforeend', generateFormFieldMarkup(key, sampleData[key]));
+      });
+
+      document.getElementById('modal-btn-submit').onclick = saveDocumentPayload;
+      document.getElementById('editor-modal').classList.remove('hidden');
+    }
+
+    function openEditModal(docId) {
+      activeEditingId = docId;
+      document.getElementById('modal-headline').innerText = `Edit Document`;
+      document.getElementById('modal-subheadline').innerText = `ID: ${docId}`;
+
+      const formFields = document.getElementById('modal-form-fields');
+      formFields.innerHTML = "";
+
+      const currentData = loadedDocumentsCache[docId] || {};
+      Object.keys(currentData).forEach(key => {
+        formFields.insertAdjacentHTML('beforeend', generateFormFieldMarkup(key, currentData[key]));
+      });
+
+      document.getElementById('modal-btn-submit').onclick = saveDocumentPayload;
+      document.getElementById('editor-modal').classList.remove('hidden');
+    }
+
+    function generateFormFieldMarkup(key, val) {
+      const isArray = Array.isArray(val);
+      const isBool = typeof val === 'boolean';
+      const isObj = !isArray && typeof val === 'object' && val !== null;
+      let valueStr = '';
+
+      if (isArray) valueStr = val.join('\n');
+      else if (isObj) valueStr = JSON.stringify(val, null, 2);
+      else if (val !== null && val !== undefined) valueStr = String(val);
+
+      const isLongText = isArray || isObj || valueStr.length > 50 || key.toLowerCase().includes('desc') || key.toLowerCase().includes('rule');
+
+      return `
+        <div id="field-row-${escapeHtml(key)}" class="bg-slate-900/50 p-3.5 sm:p-4 rounded-xl border border-slate-800 space-y-1.5 field-entry" data-key="${escapeHtml(key)}">
+          <div class="flex items-center justify-between">
+            <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">${escapeHtml(key)}</label>
+            <div class="flex items-center gap-2">
+              <span class="text-[10px] text-slate-500 font-mono uppercase bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">
+                ${isArray ? 'Array' : (isBool ? 'Boolean' : (isObj ? 'JSON' : 'Primitive'))}
+              </span>
+              <button type="button" onclick="removeFieldRow('${escapeHtml(key)}')" class="text-slate-500 hover:text-rose-400 p-0.5 rounded transition-colors" title="Delete attribute">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+              </button>
+            </div>
+          </div>
+          ${isBool ? `
+            <select id="modal-field-${escapeHtml(key)}" class="w-full bg-slate-950 border border-slate-800 px-3 py-2 rounded-lg text-xs sm:text-sm text-white focus:outline-none focus:border-blue-500">
+              <option value="true" ${val === true ? 'selected' : ''}>True / Enabled</option>
+              <option value="false" ${val === false ? 'selected' : ''}>False / Disabled</option>
+            </select>
+          ` : isLongText ? `
+            <textarea id="modal-field-${escapeHtml(key)}" rows="${isArray || isObj ? '4' : '3'}" class="w-full bg-slate-950 border border-slate-800 px-3 py-2 rounded-lg text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-blue-500 leading-relaxed font-mono">${escapeHtml(valueStr)}</textarea>
+          ` : `
+            <input type="text" id="modal-field-${escapeHtml(key)}" value="${escapeHtml(valueStr)}" class="w-full bg-slate-950 border border-slate-800 px-3 py-2 rounded-lg text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-blue-500">
+          `}
+        </div>
+      `;
+    }
+
+    function removeFieldRow(key) {
+      const el = document.getElementById(`field-row-${key}`);
+      if (el) el.remove();
+    }
+
+    function promptAddCustomField() {
+      const keyName = prompt("Enter the new attribute field name:");
+      if (!keyName) return;
+      const cleanKey = keyName.trim().replace(/\s+/g, '_');
+      if (!cleanKey) return;
+
+      if (document.getElementById(`field-row-${cleanKey}`)) {
+        showToast(`Field "${cleanKey}" already exists in the editor.`, 'error');
+        return;
+      }
+
+      const formFields = document.getElementById('modal-form-fields');
+      formFields.insertAdjacentHTML('beforeend', generateFormFieldMarkup(cleanKey, ""));
+      const newField = document.getElementById(`modal-field-${cleanKey}`);
+      if (newField) newField.focus();
+    }
+
+    async function saveDocumentPayload() {
+      const formFields = document.getElementById('modal-form-fields');
+      const fieldRows = formFields.querySelectorAll('.field-entry');
+      const customDocInput = document.getElementById('modal-field-__docId');
+      const customDocId = customDocInput ? customDocInput.value.trim() : null;
+
+      let payload = {};
+
+      fieldRows.forEach(row => {
+        const key = row.dataset.key;
+        const input = document.getElementById(`modal-field-${key}`);
+        if (!input) return;
+
+        const currentCachedSample = activeEditingId ? (loadedDocumentsCache[activeEditingId] || {}) : {};
+        const wasArray = Array.isArray(currentCachedSample[key]);
+        const wasBool = typeof currentCachedSample[key] === 'boolean';
+
+        if (input.tagName.toLowerCase() === 'select' || wasBool) {
+          payload[key] = input.value === 'true';
+        } else if (wasArray) {
+          payload[key] = input.value.split('\n').map(s => s.trim()).filter(Boolean);
+        } else {
+          const rawVal = input.value.trim();
+          if (rawVal === "true") payload[key] = true;
+          else if (rawVal === "false") payload[key] = false;
+          else if (rawVal !== "" && !isNaN(rawVal) && !rawVal.startsWith('0') && rawVal.length < 15) {
+            payload[key] = Number(rawVal);
+          } else {
+            // Check for valid JSON object string
+            if (rawVal.startsWith('{') && rawVal.endsWith('}')) {
+              try { payload[key] = JSON.parse(rawVal); return; } catch(e){}
+            }
+            payload[key] = rawVal;
+          }
+        }
+      });
+
+      const submitBtn = document.getElementById('modal-btn-submit');
+      submitBtn.disabled = true;
+      submitBtn.innerText = "Saving...";
+
+      try {
+        if (activeEditingId) {
+          await db.collection(currentCollectionId).doc(activeEditingId).update(payload);
+          showToast(`Record "${activeEditingId}" successfully updated.`, 'success');
+        } else {
+          if (customDocId) {
+            await db.collection(currentCollectionId).doc(customDocId).set(payload);
+            showToast(`Document "${customDocId}" saved.`, 'success');
+          } else {
+            const addedRef = await db.collection(currentCollectionId).add(payload);
+            showToast(`Created document: ${addedRef.id}`, 'success');
+          }
+        }
+        closeEditorModal();
+      } catch (err) {
+        showToast(`Save Error: ${err.message}`, 'error');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerText = "Save Changes";
+      }
+    }
+
+    async function deleteDocument(docId) {
+      if (!confirm(`Are you sure you want to permanently delete document "${docId}"? This action cannot be undone.`)) return;
+      try {
+        await db.collection(currentCollectionId).doc(docId).delete();
+        showToast(`Document "${docId}" deleted.`, 'success');
+      } catch (err) {
+        showToast(`Delete Error: ${err.message}`, 'error');
+      }
+    }
+
+    function closeEditorModal() { 
+      document.getElementById('editor-modal').classList.add('hidden'); 
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeEditorModal();
+    });
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initSidebar();
+      if (TARGET_COLLECTIONS.length > 0) {
+        selectCollection(TARGET_COLLECTIONS[0].id);
+      }
+    });
+  </script>
+</body>
+</html>
